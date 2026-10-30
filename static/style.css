@@ -247,6 +247,10 @@ h1,h2,h3,p{margin:0}
 .ask-q{font-size:11.5px;color:var(--dim-2);margin-bottom:7px}
 .ask-q::before{content:"› ";color:var(--mix)}
 .ask-a{font-size:13px;line-height:1.68;color:#cfd9ea}
+.ask-draft{
+  font-size:11px;line-height:1.55;color:#ffc857;margin-top:9px;
+  padding:7px 9px;border-radius:8px;background:rgba(255,200,87,.1)
+}
 .ask-meta{font-family:var(--mono);font-size:9.5px;color:var(--dim-2);margin-top:9px;letter-spacing:.02em}
 .ask-note{font-size:10.5px;line-height:1.55;color:var(--dim-2);margin-top:11px}
 

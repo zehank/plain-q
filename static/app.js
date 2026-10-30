@@ -114,6 +114,7 @@ const I18N = {
     askErr: (m) => `The tutor could not answer: ${m}`,
     askNote: 'Only this question leaves your machine. The circuit and the numbers are computed locally by Qiskit, and the tutor is an NVIDIA Nemotron model on Nebius Token Factory.',
     askNoKey: 'The tutor is offline. Put a NEBIUS_API_KEY in .env and restart to switch it on.',
+    askDraft: 'Heads up: the model returned its thinking, not its final answer. Ask again.',
     tutorOn: (m) => `tutor: ${m}`,
 
     timeAxis: 'time →',
@@ -218,6 +219,7 @@ const I18N = {
     askErr: (m) => `讲解员没能回答：${m}`,
     askNote: '只有这个问题会离开你的电脑。电路和数字都由 Qiskit 在本机算，讲解员是跑在 Nebius Token Factory 上的 NVIDIA Nemotron 模型。',
     askNoKey: '讲解员现在离线。在 .env 里填 NEBIUS_API_KEY 再重启就能打开。',
+    askDraft: '注意：模型这次返回的是思考过程，不是最终答案。再问一次。',
     tutorOn: (m) => `讲解员：${m}`,
 
     timeAxis: '时间 →',
@@ -556,9 +558,12 @@ function esc(s) {
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function answerHtml(qa) {
+function answerHtml(qa, t) {
+  const draft = qa.source && qa.source !== 'content'
+    ? `<p class="ask-draft">${t.askDraft}</p>` : '';
   return `<p class="ask-q">${esc(qa.q)}</p>
     <p class="ask-a">${esc(qa.a)}</p>
+    ${draft}
     <p class="ask-meta">${esc(qa.provider)} · ${esc(qa.model)} · ${qa.ms} ms</p>`;
 }
 
@@ -577,7 +582,7 @@ function paintTutor(t) {
   if (S.qa) {
     out.hidden = false;
     out.className = 'ask-out';
-    out.innerHTML = answerHtml(S.qa);
+    out.innerHTML = answerHtml(S.qa, t);
   }
 }
 
@@ -614,9 +619,9 @@ async function askTutor(t) {
     });
     const data = await res.json();
     if (data.ok) {
-      S.qa = { q, a: data.text, model: data.model, provider: data.provider, ms: data.ms };
+      S.qa = { q, a: data.text, source: data.source, model: data.model, provider: data.provider, ms: data.ms };
       out.className = 'ask-out';
-      out.innerHTML = answerHtml(S.qa);
+      out.innerHTML = answerHtml(S.qa, t);
     } else {
       out.className = 'ask-out bad';
       out.textContent = t.askErr(data.message || data.reason || 'unknown');

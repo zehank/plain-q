@@ -28,22 +28,14 @@ DEFAULT_BASE = "https://api.tokenfactory.nebius.com/v1"
 DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 TIMEOUT = 45
 
-SYSTEM = """You are the tutor inside Plain Q, a quantum-circuit toy for absolute beginners.
+SYSTEM = """You are the tutor inside Plain Q, a quantum-circuit toy for beginners.
+Qiskit already computed every number exactly. You are given that circuit and those numbers.
 
-The user built a tiny circuit and Qiskit has already computed every number exactly.
-You are given that circuit and those numbers. Write one short answer, in plain words,
-that a 15-year-old with no physics could follow.
-
-Hard rules:
-- Never invent a number or a probability. Use only the values given to you.
-- 60 to 110 words. One flowing paragraph. No bullet lists, no headings, no markdown.
-- The first time you use a technical word, define it in the same sentence
-  (for example "entanglement, which means the two wires stop having answers of their own").
-- Speak about *this* board, not about quantum computing in general.
-- If the question is not about this circuit, say so in one sentence and then say
-  what the board actually does.
-- Answer in {language}, and nowhere else.
-"""
+Write the answer, and only the answer. One paragraph, 70 to 100 words, plain words.
+The first time you use a technical word, define it in the same sentence.
+Use only the numbers you were given; never invent one.
+Write in {language}. Do not plan, do not think out loud, do not restate these rules,
+do not count your words, and do not describe what you are about to do."""
 
 
 def _read_dotenv():
@@ -127,19 +119,20 @@ def _dist(probs, n):
 
 
 def _text_of(message):
-    """Find the prose in a chat-completion message.
+    """Find the prose in a chat-completion message. Returns (text, where_it_came_from).
 
     Nemotron may put the paragraph in `content`, or leave `content` null and
     write it to `reasoning_content` while it thinks. A null `content` used to
-    hit `.strip()` and take the whole route down with an AttributeError; the
-    user wants the sentence, so look in both places before giving up.
+    hit `.strip()` and take the whole route down with an AttributeError. The
+    caller reports which field it used, so the page can say "this is only the
+    model thinking" instead of passing a draft off as an answer.
     """
     if not isinstance(message, dict):
-        return ""
+        return "", ""
     for key in ("content", "reasoning_content", "reasoning"):
         value = message.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            return value.strip(), key
         if isinstance(value, list):
             parts = []
             for part in value:
@@ -148,8 +141,8 @@ def _text_of(message):
                     if isinstance(piece, str) and piece.strip():
                         parts.append(piece.strip())
             if parts:
-                return "".join(parts)
-    return ""
+                return "".join(parts), key
+    return "", ""
 
 
 def ask(question, state, lang="en"):
@@ -163,7 +156,10 @@ def ask(question, state, lang="en"):
     payload = {
         "model": cfg["model"],
         "temperature": 0.3,
-        "max_tokens": 900,
+        "max_tokens": 1200,
+        # Nemotron 3 is a thinking model. Left on, it spends the budget reasoning
+        # and returns content: null — the page then shows its inner monologue.
+        "chat_template_kwargs": {"enable_thinking": False},
         "messages": [
             {"role": "system", "content": SYSTEM.format(language=language)},
             {"role": "user", "content": json.dumps(
@@ -203,7 +199,7 @@ def ask(question, state, lang="en"):
     try:
         choice = (body.get("choices") or [{}])[0]
         message = choice.get("message") or {}
-        text = _text_of(message)
+        text, source = _text_of(message)
         if not text:
             finish = choice.get("finish_reason")
             return {
@@ -220,6 +216,7 @@ def ask(question, state, lang="en"):
     return {
         "ok": True,
         "text": text,
+        "source": source,
         "model": body.get("model") or cfg["model"],
         "provider": "Nebius Token Factory",
         "ms": round((time.perf_counter() - started) * 1000),
