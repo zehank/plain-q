@@ -126,6 +126,32 @@ def _dist(probs, n):
     return out
 
 
+def _text_of(message):
+    """Find the prose in a chat-completion message.
+
+    Nemotron may put the paragraph in `content`, or leave `content` null and
+    write it to `reasoning_content` while it thinks. A null `content` used to
+    hit `.strip()` and take the whole route down with an AttributeError; the
+    user wants the sentence, so look in both places before giving up.
+    """
+    if not isinstance(message, dict):
+        return ""
+    for key in ("content", "reasoning_content", "reasoning"):
+        value = message.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, list):
+            parts = []
+            for part in value:
+                if isinstance(part, dict):
+                    piece = part.get("text") or part.get("content")
+                    if isinstance(piece, str) and piece.strip():
+                        parts.append(piece.strip())
+            if parts:
+                return "".join(parts)
+    return ""
+
+
 def ask(question, state, lang="en"):
     """One question in, one paragraph out. Raises nothing — always returns a dict."""
     cfg = config()
@@ -137,7 +163,7 @@ def ask(question, state, lang="en"):
     payload = {
         "model": cfg["model"],
         "temperature": 0.3,
-        "max_tokens": 320,
+        "max_tokens": 900,
         "messages": [
             {"role": "system", "content": SYSTEM.format(language=language)},
             {"role": "user", "content": json.dumps(
@@ -175,9 +201,20 @@ def ask(question, state, lang="en"):
         return {"ok": False, "reason": "error", "message": f"{type(exc).__name__}: {exc}"}
 
     try:
-        text = body["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError, TypeError):
-        return {"ok": False, "reason": "bad-response", "message": "Nebius returned no text."}
+        choice = (body.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+        text = _text_of(message)
+        if not text:
+            finish = choice.get("finish_reason")
+            return {
+                "ok": False,
+                "reason": "empty-content",
+                "message": (f"The model returned no text (finish_reason={finish}). "
+                            f"Raw: {json.dumps(body)[:320]}"),
+            }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "reason": "bad-response",
+                "message": f"{type(exc).__name__}: {exc}. Raw: {json.dumps(body)[:320]}"}
 
     usage = body.get("usage") or {}
     return {
